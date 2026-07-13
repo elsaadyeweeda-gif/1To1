@@ -2,7 +2,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { AppState, Child, Employee, Session, Expense, ChildActivity, SalaryAdvance, UnpaidLeave, Bonus, Deduction } from './data';
+import { AppState, Child, Employee, Session, Expense, ChildActivity, SalaryAdvance, UnpaidLeave, Bonus, Deduction, SafeTransaction } from './data';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -59,7 +59,9 @@ export class App {
   isActivityModalOpen = signal(false);
   isPaymentModalOpen = signal(false);
   editingPaymentId = signal<string | null>(null);
-  financeViewMode = signal<'expenses' | 'payments'>('expenses');
+  financeViewMode = signal<'expenses' | 'payments' | 'safe'>('expenses');
+  isSafeModalOpen = signal(false);
+  editingSafeTxId = signal<string | null>(null);
 
   // Payroll Modals Visibility
   isAdvanceModalOpen = signal(false);
@@ -95,6 +97,7 @@ export class App {
   expenseForm!: FormGroup;
   activityForm!: FormGroup;
   paymentForm!: FormGroup;
+  safeForm!: FormGroup;
 
   // Payroll Reactive Forms
   advanceForm!: FormGroup;
@@ -175,12 +178,130 @@ export class App {
     return this.totalRevenues() - this.totalExpenses();
   });
 
+  safeBalance = computed(() => {
+    const subscriptionsTotal = this.state.payments().reduce((sum, p) => sum + p.amount, 0);
+    const expensesTotal = this.state.expenses().reduce((sum, e) => sum + e.amount, 0);
+    const paidSalariesTotal = this.state.payrollRuns().filter(r => r.status === 'paid').reduce((sum, r) => sum + r.netSalary, 0);
+    const directDepositsTotal = this.state.safeTransactions().filter(t => t.type === 'deposit').reduce((sum, t) => sum + t.amount, 0);
+    const directWithdrawalsTotal = this.state.safeTransactions().filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0);
+    
+    return subscriptionsTotal + directDepositsTotal - expensesTotal - paidSalariesTotal - directWithdrawalsTotal;
+  });
+
+  safeLedger = computed(() => {
+    const list: {
+      id: string;
+      source: 'subscription' | 'expense' | 'salary' | 'direct';
+      type: 'deposit' | 'withdrawal' | 'inflow' | 'outflow';
+      title: string;
+      amount: number;
+      date: string;
+      notes: string;
+      user?: string;
+    }[] = [];
+
+    // 1. Subscriptions
+    this.state.payments().forEach(p => {
+      list.push({
+        id: p.id || '',
+        source: 'subscription',
+        type: 'deposit',
+        title: `اشتراك محصل للطفل: ${p.childName}`,
+        amount: p.amount,
+        date: p.date,
+        notes: `شهر: ${p.month} - ${p.paymentMethod === 'cash' ? 'نقدي' : p.paymentMethod === 'bank' ? 'حوالة بنكية' : p.paymentMethod} ${p.notes ? ' (' + p.notes + ')' : ''}`
+      });
+    });
+
+    // 2. Expenses
+    this.state.expenses().forEach(e => {
+      list.push({
+        id: e.id || '',
+        source: 'expense',
+        type: 'withdrawal',
+        title: `مصروف: ${e.title}`,
+        amount: e.amount,
+        date: e.date,
+        notes: `تصنيف: ${this.getExpenseCategoryName(e.category)}`
+      });
+    });
+
+    // 3. Paid Salaries
+    this.state.payrollRuns().filter(r => r.status === 'paid').forEach(r => {
+      list.push({
+        id: r.id || '',
+        source: 'salary',
+        type: 'withdrawal',
+        title: `راتب مصروف للموظف: ${r.employeeName}`,
+        amount: r.netSalary,
+        date: r.dateGenerated || new Date().toISOString().split('T')[0],
+        notes: `راتب شهر: ${r.month} (${r.role})`
+      });
+    });
+
+    // 4. Direct Safe Transactions
+    this.state.safeTransactions().forEach(t => {
+      list.push({
+        id: t.id || '',
+        source: 'direct',
+        type: t.type,
+        title: t.type === 'deposit' ? 'إيداع مباشر في الخزينة' : 'سحب مباشر من الخزينة',
+        amount: t.amount,
+        date: t.date,
+        notes: t.notes,
+        user: t.user
+      });
+    });
+
+    // Sort by date descending
+    return list.sort((a, b) => {
+      const cmp = b.date.localeCompare(a.date);
+      if (cmp !== 0) return cmp;
+      return b.id.localeCompare(a.id);
+    });
+  });
+
+  parseTimeToMinutes(timeStr: string): number {
+    if (!timeStr) return 0;
+    const regex = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM|am|pm)$/i;
+    const match = timeStr.match(regex);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && hours < 12) {
+        hours += 12;
+      } else if (ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      return hours * 60 + minutes;
+    }
+    
+    // Support 24h format as fallback (e.g. "14:30")
+    const regex24 = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+    const match24 = timeStr.match(regex24);
+    if (match24) {
+      const hours = parseInt(match24[1], 10);
+      const minutes = parseInt(match24[2], 10);
+      return hours * 60 + minutes;
+    }
+
+    // Support ranges if timeSlot is like "09:00 AM - 10:30 AM" by parsing the start
+    if (timeStr.includes('-')) {
+      const startPart = timeStr.split('-')[0].trim();
+      return this.parseTimeToMinutes(startPart);
+    }
+    
+    return 0;
+  }
+
   // Booking & Specialist Availability Calculation Helper
   // Filters specialists dynamically based on selected specialty & schedule availability
   availableSpecialists = computed(() => {
     const specialty = this.sessionForm.get('specialty')?.value;
     const date = this.sessionForm.get('date')?.value;
-    const timeSlot = this.sessionForm.get('timeSlot')?.value;
+    const startTime = this.sessionForm.get('startTime')?.value;
+    const endTime = this.sessionForm.get('endTime')?.value;
 
     if (!specialty) return [];
 
@@ -190,15 +311,29 @@ export class App {
       e.specialties.includes(specialty)
     );
 
-    // If date and timeSlot are filled, check schedule for conflicts
-    if (date && timeSlot) {
+    // If date, startTime and endTime are filled, check schedule for conflicts
+    if (date && startTime && endTime) {
+      const sStart = this.parseTimeToMinutes(startTime);
+      const sEnd = this.parseTimeToMinutes(endTime);
+
       specialists = specialists.map(s => {
-        const isBooked = this.state.sessions().some(session => 
-          session.id !== this.sessionForm.get('id')?.value &&
-          session.employeeId === s.id &&
-          session.date === date &&
-          session.timeSlot === timeSlot
-        );
+        const isBooked = this.state.sessions().some(session => {
+          if (session.id === this.sessionForm.get('id')?.value || session.employeeId !== s.id || session.date !== date) {
+            return false;
+          }
+          // Parse candidate session times
+          const cStart = this.parseTimeToMinutes(session.startTime || session.timeSlot || '');
+          let cEnd = this.parseTimeToMinutes(session.endTime || '');
+          if (!cEnd && session.timeSlot && session.timeSlot.includes('-')) {
+            cEnd = this.parseTimeToMinutes(session.timeSlot.split('-')[1]?.trim() || '');
+          }
+          if (!cEnd) {
+            // default end to 1 hour after start if not specified
+            cEnd = cStart + 60;
+          }
+          
+          return sStart < cEnd && cStart < sEnd;
+        });
         return {
           ...s,
           isBooked
@@ -392,7 +527,8 @@ export class App {
       childId: ['', Validators.required],
       specialty: ['', Validators.required],
       date: [new Date().toISOString().split('T')[0], Validators.required],
-      timeSlot: ['09:00', Validators.required],
+      startTime: ['09:00 AM', Validators.required],
+      endTime: ['10:00 AM', Validators.required],
       employeeId: ['', Validators.required]
     });
 
@@ -403,7 +539,8 @@ export class App {
       childId: ['', Validators.required],
       coachId: ['', Validators.required],
       date: [new Date().toISOString().split('T')[0], Validators.required],
-      timeSlot: ['11:45', Validators.required]
+      startTime: ['11:00 AM', Validators.required],
+      endTime: ['12:00 PM', Validators.required]
     });
 
     // Dynamically filter session specialties based on selected child
@@ -470,6 +607,15 @@ export class App {
 
     this.paymentForm.get('amount')?.valueChanges.subscribe(amount => {
       this.paymentAmount.set(Number(amount) || 0);
+    });
+
+    // 10. Safe Form
+    this.safeForm = this.fb.group({
+      id: [null],
+      type: ['deposit', Validators.required],
+      amount: [0, [Validators.required, Validators.min(1)]],
+      date: [new Date().toISOString().split('T')[0], Validators.required],
+      notes: ['', [Validators.required, Validators.minLength(3)]]
     });
 
     // 5. Advance Form
@@ -877,7 +1023,8 @@ export class App {
       childId: kids.length > 0 ? kids[0].id : '',
       specialty: 'skills',
       date: new Date().toISOString().split('T')[0],
-      timeSlot: '09:00',
+      startTime: '09:00 AM',
+      endTime: '10:00 AM',
       employeeId: ''
     });
     this.isSessionModalOpen.set(true);
@@ -898,6 +1045,13 @@ export class App {
       return;
     }
 
+    const sStart = this.parseTimeToMinutes(formVal.startTime);
+    const sEnd = this.parseTimeToMinutes(formVal.endTime);
+    if (sStart >= sEnd) {
+      alert('خطأ: وقت بداية الجلسة يجب أن يكون قبل وقت النهاية.');
+      return;
+    }
+
     const sessionData: Session = {
       id: formVal.id || undefined,
       childId: formVal.childId,
@@ -906,7 +1060,9 @@ export class App {
       employeeName: employee.name,
       specialty: formVal.specialty,
       date: formVal.date,
-      timeSlot: formVal.timeSlot,
+      startTime: formVal.startTime,
+      endTime: formVal.endTime,
+      timeSlot: `${formVal.startTime} - ${formVal.endTime}`,
       type: formVal.type
     };
 
@@ -1059,6 +1215,66 @@ export class App {
     }
   }
 
+  openAddSafeTxModal(type: 'deposit' | 'withdrawal') {
+    this.editingSafeTxId.set(null);
+    this.safeForm.reset({
+      id: null,
+      type: type,
+      amount: 0,
+      date: new Date().toISOString().split('T')[0],
+      notes: ''
+    });
+    this.isSafeModalOpen.set(true);
+  }
+
+  openEditSafeTxModal(tx: any) {
+    this.editingSafeTxId.set(tx.id || null);
+    this.safeForm.reset({
+      id: tx.id,
+      type: tx.type,
+      amount: tx.amount,
+      date: tx.date,
+      notes: tx.notes
+    });
+    this.isSafeModalOpen.set(true);
+  }
+
+  async onSaveSafeTxSubmit() {
+    if (this.safeForm.invalid) {
+      this.safeForm.markAllAsTouched();
+      return;
+    }
+
+    const val = this.safeForm.value;
+    if (val.type === 'withdrawal' && !val.id) {
+      const currentBalance = this.safeBalance();
+      if (currentBalance < val.amount) {
+        if (!confirm(`تحذير: المبلغ المراد سحبه (${val.amount} ج.م) أكبر من رصيد الخزينة الحالي (${currentBalance} ج.م). هل تريد الاستمرار بالسحب؟`)) {
+          return;
+        }
+      }
+    }
+
+    const txData: SafeTransaction = {
+      id: val.id || undefined,
+      type: val.type,
+      amount: Number(val.amount),
+      date: val.date,
+      notes: val.notes
+    };
+
+    const success = await this.state.saveSafeTransaction(txData);
+    if (success) {
+      this.isSafeModalOpen.set(false);
+    }
+  }
+
+  async onDeleteSafeTx(id: string) {
+    if (confirm('هل أنت متأكد من حذف حركة الخزينة هذه؟')) {
+      await this.state.deleteSafeTransaction(id);
+    }
+  }
+
   // Change active mimicking role for RBAC testing
   changeRole(role: 'admin' | 'secretary' | 'specialist') {
     this.state.selectedRole.set(role);
@@ -1103,9 +1319,7 @@ export class App {
 
   activityOptions = [
     { code: 'swim', name: 'سباحة' },
-    { code: 'horse', name: 'ركوب خيل' },
-    { code: 'skills', name: 'تنمية مهارات' },
-    { code: 'recreational', name: 'ألعاب ترفيهية' }
+    { code: 'horse', name: 'ركوب خيل' }
   ];
 
   openBookActivityModal() {
@@ -1116,7 +1330,8 @@ export class App {
       childId: kids.length > 0 ? kids[0].id : '',
       coachId: coaches.length > 0 ? coaches[0].id : '',
       date: new Date().toISOString().split('T')[0],
-      timeSlot: '11:45'
+      startTime: '11:00 AM',
+      endTime: '12:00 PM'
     });
     this.isActivityModalOpen.set(true);
   }
@@ -1136,6 +1351,13 @@ export class App {
       return;
     }
 
+    const sStart = this.parseTimeToMinutes(formVal.startTime);
+    const sEnd = this.parseTimeToMinutes(formVal.endTime);
+    if (sStart >= sEnd) {
+      alert('خطأ: وقت بداية الحصة التدريبية يجب أن يكون قبل وقت النهاية.');
+      return;
+    }
+
     const activityData: ChildActivity = {
       id: formVal.id || undefined,
       activityName: formVal.activityName,
@@ -1144,7 +1366,9 @@ export class App {
       coachId: formVal.coachId,
       coachName: coach.name,
       date: formVal.date,
-      timeSlot: formVal.timeSlot
+      startTime: formVal.startTime,
+      endTime: formVal.endTime,
+      timeSlot: `${formVal.startTime} - ${formVal.endTime}`
     };
 
     const result = await this.state.saveActivity(activityData);
@@ -1163,6 +1387,25 @@ export class App {
 
   // Time slots lookup
   timeSlots = ['09:00', '10:30', '11:45', '13:00', '14:30', '16:00', '17:30'];
+
+  amPmTimes = [
+    '07:00 AM', '07:15 AM', '07:30 AM', '07:45 AM',
+    '08:00 AM', '08:15 AM', '08:30 AM', '08:45 AM',
+    '09:00 AM', '09:15 AM', '09:30 AM', '09:45 AM',
+    '10:00 AM', '10:15 AM', '10:30 AM', '10:45 AM',
+    '11:00 AM', '11:15 AM', '11:30 AM', '11:45 AM',
+    '12:00 PM', '12:15 PM', '12:30 PM', '12:45 PM',
+    '01:00 PM', '01:15 PM', '01:30 PM', '01:45 PM',
+    '02:00 PM', '02:15 PM', '02:30 PM', '02:45 PM',
+    '03:00 PM', '03:15 PM', '03:30 PM', '03:45 PM',
+    '04:00 PM', '04:15 PM', '04:30 PM', '04:45 PM',
+    '05:00 PM', '05:15 PM', '05:30 PM', '05:45 PM',
+    '06:00 PM', '06:15 PM', '06:30 PM', '06:45 PM',
+    '07:00 PM', '07:15 PM', '07:30 PM', '07:45 PM',
+    '08:00 PM', '08:15 PM', '08:30 PM', '08:45 PM',
+    '09:00 PM', '09:15 PM', '09:30 PM', '09:45 PM',
+    '10:00 PM'
+  ];
 
   // Easy scroll navigation helpers
   scrollModal(backdropId: string, target: 'top' | 'bottom') {
@@ -1187,6 +1430,8 @@ export class App {
       this.scrollModal('expense-modal-content', 'top');
     } else if (this.isPaymentModalOpen()) {
       this.scrollModal('payment-modal-content', 'top');
+    } else if (this.isSafeModalOpen()) {
+      this.scrollModal('safe-modal-content', 'top');
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1203,6 +1448,8 @@ export class App {
       this.scrollModal('expense-modal-content', 'bottom');
     } else if (this.isPaymentModalOpen()) {
       this.scrollModal('payment-modal-content', 'bottom');
+    } else if (this.isSafeModalOpen()) {
+      this.scrollModal('safe-modal-content', 'bottom');
     } else {
       window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
     }

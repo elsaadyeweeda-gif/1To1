@@ -28,6 +28,7 @@ if (originalFetch) {
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import patientsRouter from './routes/patients';
+import sessionsRouter from './routes/sessions';
 
 const app = express();
 app.use((req, res, next) => {
@@ -37,8 +38,10 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/sql/patients', patientsRouter);
+app.use('/api/sql/sessions', sessionsRouter);
 
-const dbPath = join(process.cwd(), 'data.json');
+const isVercel = !!process.env['VERCEL'];
+const dbPath = isVercel ? '/tmp/data.json' : join(process.cwd(), 'data.json');
 
 interface Child {
   id: string;
@@ -76,6 +79,8 @@ interface Session {
   specialty: string;
   date: string;
   timeSlot: string;
+  startTime?: string;
+  endTime?: string;
   type: 'morning' | 'evening' | 'individual';
 }
 
@@ -96,6 +101,8 @@ interface ChildActivity {
   childName: string;
   date: string;
   timeSlot: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 interface SalaryAdvance {
@@ -197,6 +204,15 @@ interface ChildPayment {
   notes?: string;
 }
 
+interface SafeTransaction {
+  id?: string;
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  date: string;
+  notes: string;
+  user?: string;
+}
+
 interface DB {
   children: Child[];
   employees: Employee[];
@@ -210,6 +226,7 @@ interface DB {
   payrollRuns: PayrollRun[];
   auditLogs: AuditLog[];
   payments?: ChildPayment[];
+  safeTransactions?: SafeTransaction[];
 }
 
 // Initial Seeding Data
@@ -453,13 +470,29 @@ const initialData: DB = {
       paymentMethod: "bank",
       notes: "سداد قسط نهار مع نشاط السباحة"
     }
-  ]
+  ],
+  safeTransactions: []
 };
 
 // Helper to read and write database
 const readDB = (): DB => {
   try {
-    if (!existsSync(dbPath)) {
+    if (isVercel && !existsSync(dbPath)) {
+      const srcPath = join(process.cwd(), 'data.json');
+      if (existsSync(srcPath)) {
+        try {
+          const raw = readFileSync(srcPath, 'utf8');
+          writeFileSync(dbPath, raw, 'utf8');
+        } catch (copyErr) {
+          console.error('Error copying database file to /tmp:', copyErr);
+          writeDB(initialData);
+          return initialData;
+        }
+      } else {
+        writeDB(initialData);
+        return initialData;
+      }
+    } else if (!existsSync(dbPath)) {
       writeDB(initialData);
       return initialData;
     }
@@ -477,6 +510,7 @@ const readDB = (): DB => {
     if (!data.payrollRuns) data.payrollRuns = [];
     if (!data.auditLogs) data.auditLogs = [];
     if (!data.payments) data.payments = [];
+    if (!data.safeTransactions) data.safeTransactions = [];
     return data;
   } catch (err) {
     console.error('Error reading database file, returning initialData:', err);
@@ -570,40 +604,98 @@ app.delete('/api/employees/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Helper to parse time in server.ts
+function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const regex = /^(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM|am|pm)$/i;
+  const match = timeStr.match(regex);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && hours < 12) {
+      hours += 12;
+    } else if (ampm === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    return hours * 60 + minutes;
+  }
+  
+  const regex24 = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+  const match24 = timeStr.match(regex24);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    return hours * 60 + minutes;
+  }
+
+  if (timeStr.includes('-')) {
+    const startPart = timeStr.split('-')[0].trim();
+    return parseTimeToMinutes(startPart);
+  }
+  
+  return 0;
+}
+
 // 4. Booking Session CRUD with strictly validated Conflict Prevention
 app.post('/api/sessions', (req, res) => {
   const db = readDB();
   const session = req.body as Session;
   
-  // Validation: double-booking conflict prevention
-  // Check if child already has a session at this date and time
-  const childConflict = db.sessions.find((s: Session) => 
-    s.id !== session.id &&
-    s.childId === session.childId &&
-    s.date === session.date &&
-    s.timeSlot === session.timeSlot
-  );
+  // Calculate candidate times
+  const sStart = parseTimeToMinutes(session.startTime || session.timeSlot || '');
+  let sEnd = parseTimeToMinutes(session.endTime || '');
+  if (!sEnd && session.timeSlot && session.timeSlot.includes('-')) {
+    sEnd = parseTimeToMinutes(session.timeSlot.split('-')[1]?.trim() || '');
+  }
+  if (!sEnd) {
+    sEnd = sStart + 60;
+  }
+
+  // Validation: double-booking conflict prevention for Child
+  const childConflict = db.sessions.find((s: Session) => {
+    if (s.id === session.id || s.childId !== session.childId || s.date !== session.date) {
+      return false;
+    }
+    const cStart = parseTimeToMinutes(s.startTime || s.timeSlot || '');
+    let cEnd = parseTimeToMinutes(s.endTime || '');
+    if (!cEnd && s.timeSlot && s.timeSlot.includes('-')) {
+      cEnd = parseTimeToMinutes(s.timeSlot.split('-')[1]?.trim() || '');
+    }
+    if (!cEnd) {
+      cEnd = cStart + 60;
+    }
+    return sStart < cEnd && cStart < sEnd;
+  });
   
   if (childConflict) {
     res.status(400).json({ 
       error: 'conflict', 
-      message: `الطفل لديه جلسة أخرى مجدولة بالفعل في نفس اليوم والتوقيت (${session.date} - ${session.timeSlot})` 
+      message: `الطفل لديه جلسة أخرى متداخلة في نفس اليوم والتوقيت المختار` 
     });
     return;
   }
   
   // Check if specialist already has a session at this date and time
-  const specialistConflict = db.sessions.find((s: Session) => 
-    s.id !== session.id &&
-    s.employeeId === session.employeeId &&
-    s.date === session.date &&
-    s.timeSlot === session.timeSlot
-  );
+  const specialistConflict = db.sessions.find((s: Session) => {
+    if (s.id === session.id || s.employeeId !== session.employeeId || s.date !== session.date) {
+      return false;
+    }
+    const cStart = parseTimeToMinutes(s.startTime || s.timeSlot || '');
+    let cEnd = parseTimeToMinutes(s.endTime || '');
+    if (!cEnd && s.timeSlot && s.timeSlot.includes('-')) {
+      cEnd = parseTimeToMinutes(s.timeSlot.split('-')[1]?.trim() || '');
+    }
+    if (!cEnd) {
+      cEnd = cStart + 60;
+    }
+    return sStart < cEnd && cStart < sEnd;
+  });
   
   if (specialistConflict) {
     res.status(400).json({ 
       error: 'conflict', 
-      message: `الأخصائي لديه جلسة أخرى مجدولة بالفعل في نفس اليوم والتوقيت (${session.date} - ${session.timeSlot})` 
+      message: `الأخصائي لديه جلسة أخرى متداخلة في نفس اليوم والتوقيت المختار` 
     });
     return;
   }
@@ -641,31 +733,59 @@ app.post('/api/activities', (req, res) => {
   
   const activity = req.body as ChildActivity;
   
+  // Calculate candidate times
+  const sStart = parseTimeToMinutes(activity.startTime || activity.timeSlot || '');
+  let sEnd = parseTimeToMinutes(activity.endTime || '');
+  if (!sEnd && activity.timeSlot && activity.timeSlot.includes('-')) {
+    sEnd = parseTimeToMinutes(activity.timeSlot.split('-')[1]?.trim() || '');
+  }
+  if (!sEnd) {
+    sEnd = sStart + 60;
+  }
+
   // Validate double booking conflict for activity
-  const childConflict = db.activities.find((a: ChildActivity) =>
-    a.id !== activity.id &&
-    a.childId === activity.childId &&
-    a.date === activity.date &&
-    a.timeSlot === activity.timeSlot
-  );
+  const childConflict = db.activities.find((a: ChildActivity) => {
+    if (a.id === activity.id || a.childId !== activity.childId || a.date !== activity.date) {
+      return false;
+    }
+    const cStart = parseTimeToMinutes(a.startTime || a.timeSlot || '');
+    let cEnd = parseTimeToMinutes(a.endTime || '');
+    if (!cEnd && a.timeSlot && a.timeSlot.includes('-')) {
+      cEnd = parseTimeToMinutes(a.timeSlot.split('-')[1]?.trim() || '');
+    }
+    if (!cEnd) {
+      cEnd = cStart + 60;
+    }
+    return sStart < cEnd && cStart < sEnd;
+  });
+
   if (childConflict) {
     res.status(400).json({
       error: 'conflict',
-      message: `الطفل لديه نشاط آخر مجدول بالفعل في نفس اليوم والتوقيت (${activity.date} - ${activity.timeSlot})`
+      message: `الطفل لديه نشاط آخر متداخل في نفس اليوم والتوقيت المختار`
     });
     return;
   }
 
-  const coachConflict = db.activities.find((a: ChildActivity) =>
-    a.id !== activity.id &&
-    a.coachId === activity.coachId &&
-    a.date === activity.date &&
-    a.timeSlot === activity.timeSlot
-  );
+  const coachConflict = db.activities.find((a: ChildActivity) => {
+    if (a.id === activity.id || a.coachId !== activity.coachId || a.date !== activity.date) {
+      return false;
+    }
+    const cStart = parseTimeToMinutes(a.startTime || a.timeSlot || '');
+    let cEnd = parseTimeToMinutes(a.endTime || '');
+    if (!cEnd && a.timeSlot && a.timeSlot.includes('-')) {
+      cEnd = parseTimeToMinutes(a.timeSlot.split('-')[1]?.trim() || '');
+    }
+    if (!cEnd) {
+      cEnd = cStart + 60;
+    }
+    return sStart < cEnd && cStart < sEnd;
+  });
+
   if (coachConflict) {
     res.status(400).json({
       error: 'conflict',
-      message: `المدرب لديه نشاط آخر مجدول بالفعل في نفس اليوم والتوقيت (${activity.date} - ${activity.timeSlot})`
+      message: `المدرب لديه نشاط آخر متداخل في نفس اليوم والتوقيت المختار`
     });
     return;
   }
@@ -1031,6 +1151,51 @@ app.delete('/api/payments/:id', (req, res) => {
       addAuditLog(db, `حذف سداد اشتراك للطفل: ${payment.childName}`, user, `المبلغ: ${payment.amount} ج.م، الشهر: ${payment.month}`);
     }
     db.payments = db.payments.filter((p: ChildPayment) => p.id !== id);
+  }
+  
+  writeDB(db);
+  res.json({ success: true });
+});
+
+// 10.6 Safe Transactions CRUD
+app.post('/api/safe-transactions', (req, res) => {
+  const db = readDB();
+  if (!db.safeTransactions) db.safeTransactions = [];
+  
+  const tx = req.body as SafeTransaction;
+  const user = decodeURIComponent(req.headers['x-user-role'] as string || 'مسؤول');
+  
+  if (!tx.id) {
+    tx.id = 'tx_' + Date.now();
+    tx.user = user;
+    db.safeTransactions.push(tx);
+    addAuditLog(db, `عملية خزينة مباشرة: ${tx.type === 'deposit' ? 'إيداع' : 'سحب'}`, user, `المبلغ: ${tx.amount} ج.م، الملاحظات: ${tx.notes}`);
+  } else {
+    const idx = db.safeTransactions.findIndex((t) => t.id === tx.id);
+    if (idx !== -1) {
+      tx.user = user;
+      db.safeTransactions[idx] = tx;
+      addAuditLog(db, `تعديل عملية خزينة مباشرة: ${tx.type === 'deposit' ? 'إيداع' : 'سحب'}`, user, `المبلغ: ${tx.amount} ج.م، الملاحظات: ${tx.notes}`);
+    } else {
+      db.safeTransactions.push(tx);
+    }
+  }
+  
+  writeDB(db);
+  res.json({ success: true, safeTransaction: tx });
+});
+
+app.delete('/api/safe-transactions/:id', (req, res) => {
+  const db = readDB();
+  const { id } = req.params;
+  const user = decodeURIComponent(req.headers['x-user-role'] as string || 'مسؤول');
+  
+  if (db.safeTransactions) {
+    const tx = db.safeTransactions.find((t) => t.id === id);
+    if (tx) {
+      addAuditLog(db, `حذف عملية خزينة مباشرة: ${tx.type === 'deposit' ? 'إيداع' : 'سحب'}`, user, `المبلغ: ${tx.amount} ج.م، الملاحظات: ${tx.notes}`);
+    }
+    db.safeTransactions = db.safeTransactions.filter((t) => t.id !== id);
   }
   
   writeDB(db);

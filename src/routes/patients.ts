@@ -11,13 +11,11 @@ const router = Router();
  */
 router.get('/', (async (req: Request, res: Response) => {
   try {
-    // Wrap database query in try/catch to sanitize raw errors (Query Layer)
     const allPatients = await db.select().from(patients);
     res.json(allPatients);
     return;
   } catch (error) {
     console.error('[Patients Router] Failed to fetch patients:', error);
-    // Generic, sanitized error message to caller (Caller Layer)
     res.status(500).json({
       error: 'Failed to fetch patients database records. Please try again later.'
     });
@@ -61,7 +59,6 @@ router.get('/:id', (async (req: Request, res: Response) => {
 
 /**
  * 3. CREATE NEW PATIENT (إضافة طالب جديد)
- * Accepts patient data from the request body and inserts it into Cloud SQL via Drizzle.
  */
 router.post('/', (async (req: Request, res: Response) => {
   const {
@@ -84,7 +81,6 @@ router.post('/', (async (req: Request, res: Response) => {
   }
 
   try {
-    // Perform type-safe insertion using Drizzle ORM
     const newPatient = await db.insert(patients)
       .values({
         fullName,
@@ -96,7 +92,7 @@ router.post('/', (async (req: Request, res: Response) => {
         emergencyContactPhone,
         admissionDate
       })
-      .returning(); // Returns the created record with auto-generated serial ID
+      .returning();
 
     res.status(201).json({
       success: true,
@@ -115,7 +111,6 @@ router.post('/', (async (req: Request, res: Response) => {
 
 /**
  * 4. UPDATE PATIENT (تحديث بيانات طالب)
- * Modifies an existing patient record in the database.
  */
 router.put('/:id', (async (req: Request, res: Response) => {
   const idParam = req.params['id'];
@@ -138,7 +133,6 @@ router.put('/:id', (async (req: Request, res: Response) => {
   } = req.body;
 
   try {
-    // Update the row matching the ID
     const updatedPatient = await db.update(patients)
       .set({
         fullName,
@@ -149,7 +143,7 @@ router.put('/:id', (async (req: Request, res: Response) => {
         emergencyContactName,
         emergencyContactPhone,
         admissionDate,
-        updatedAt: new Date() // Sync updatedAt timestamp
+        updatedAt: new Date()
       })
       .where(eq(patients.id, patientId))
       .returning();
@@ -176,7 +170,6 @@ router.put('/:id', (async (req: Request, res: Response) => {
 
 /**
  * 5. DELETE PATIENT (حذف طالب)
- * Removes a patient from the database (onDelete: cascade automatically cleans up their sessions and billing records)
  */
 router.delete('/:id', (async (req: Request, res: Response) => {
   const idParam = req.params['id'];

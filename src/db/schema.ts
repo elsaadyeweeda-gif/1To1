@@ -50,6 +50,7 @@ export const staff = pgTable('staff', {
 /**
  * 4. Sessions/Appointments Table (جدول الجلسات/المواعيد)
  * Tracks sessions scheduled between a patient and a therapist.
+ * Modified to support session start and end times (من وإلى).
  */
 export const sessions = pgTable('sessions', {
   id: serial('id').primaryKey(),
@@ -60,7 +61,8 @@ export const sessions = pgTable('sessions', {
     .references(() => staff.id, { onDelete: 'cascade' })
     .notNull(),
   sessionDate: text('session_date').notNull(), // Expected format: YYYY-MM-DD
-  sessionTime: text('session_time').notNull(), // Expected format: HH:MM (24h)
+  startTime: text('start_time').notNull(), // Expected format: HH:MM (24h) - وقت بدء الجلسة
+  endTime: text('end_time').notNull(), // Expected format: HH:MM (24h) - وقت انتهاء الجلسة
   status: text('status').default('Scheduled').notNull(), // 'Scheduled', 'Completed', 'Cancelled'
   sessionNotes: text('session_notes'), // Progress report or observations filled after completion
   createdAt: timestamp('created_at').defaultNow().notNull(),

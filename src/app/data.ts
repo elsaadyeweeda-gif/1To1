@@ -42,6 +42,8 @@ export interface Session {
   specialty: string;
   date: string;
   timeSlot: string;
+  startTime?: string;
+  endTime?: string;
   type: 'morning' | 'evening' | 'individual';
 }
 
@@ -62,6 +64,8 @@ export interface ChildActivity {
   childName: string;
   date: string;
   timeSlot: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface SalaryAdvance {
@@ -163,6 +167,15 @@ export interface ChildPayment {
   notes?: string;
 }
 
+export interface SafeTransaction {
+  id?: string;
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  date: string;
+  notes: string;
+  user?: string;
+}
+
 interface DBPayload {
   children?: Child[];
   employees?: Employee[];
@@ -176,6 +189,7 @@ interface DBPayload {
   payrollRuns?: PayrollRun[];
   auditLogs?: AuditLog[];
   payments?: ChildPayment[];
+  safeTransactions?: SafeTransaction[];
 }
 
 @Injectable({
@@ -194,6 +208,7 @@ export class AppState {
   payrollRuns = signal<PayrollRun[]>([]);
   auditLogs = signal<AuditLog[]>([]);
   payments = signal<ChildPayment[]>([]);
+  safeTransactions = signal<SafeTransaction[]>([]);
   
   isLoading = signal<boolean>(true);
   errorMessage = signal<string | null>(null);
@@ -268,6 +283,7 @@ export class AppState {
         this.payrollRuns.set(data.payrollRuns || []);
         this.auditLogs.set(data.auditLogs || []);
         this.payments.set(data.payments || []);
+        this.safeTransactions.set(data.safeTransactions || []);
         
         // Success!
         this.errorMessage.set(null);
@@ -744,6 +760,48 @@ export class AppState {
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'خطأ أثناء حذف السداد';
+      this.errorMessage.set(msg);
+      return false;
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  async saveSafeTransaction(tx: SafeTransaction) {
+    this.isLoading.set(true);
+    try {
+      const res = await fetch('/api/safe-transactions', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-role': encodeURIComponent(this.getUserRoleHeader())
+        },
+        body: JSON.stringify(tx)
+      });
+      if (!res.ok) throw new Error('فشل حفظ عملية الخزينة');
+      await this.loadAllData();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'خطأ أثناء حفظ عملية الخزينة';
+      this.errorMessage.set(msg);
+      return false;
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  async deleteSafeTransaction(id: string) {
+    this.isLoading.set(true);
+    try {
+      const res = await fetch(`/api/safe-transactions/${id}`, { 
+        method: 'DELETE',
+        headers: { 'x-user-role': encodeURIComponent(this.getUserRoleHeader()) }
+      });
+      if (!res.ok) throw new Error('فشل حذف عملية الخزينة');
+      await this.loadAllData();
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'خطأ أثناء حذف عملية الخزينة';
       this.errorMessage.set(msg);
       return false;
     } finally {

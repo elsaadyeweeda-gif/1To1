@@ -1,6 +1,6 @@
 {
-  "name": "Copy of 1TO1 Therapy \u0026 Special Needs Center",
-  "description": "A comprehensive Arabic-supporting RTL management system for Therapy \u0026 Special Needs Centers. Features patient/child management, HR employee tracking, scheduling conflict prevention, and a basic financial ERP dashboard.",
+  "name": "Applet",
+  "description": "Applet description",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
