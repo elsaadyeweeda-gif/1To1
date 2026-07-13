@@ -1,0 +1,107 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("POSTGRES_PRISMA_URL") // uses connection pooling
+  directUrl = env("POSTGRES_URL_NON_POOLING") // uses a direct connection
+}
+
+enum CareType {
+  DAY
+  EVENING
+  INDIVIDUAL
+}
+
+enum Role {
+  SECRETARY
+  NANNY
+  WORKER
+  SPECIALIST
+  SUPERVISOR
+}
+
+enum SessionType {
+  MORNING
+  EVENING
+  INDIVIDUAL
+}
+
+enum ExpenseCategory {
+  SALARIES
+  RENT
+  BILLS
+  PURCHASES
+  OTHER
+}
+
+model Child {
+  id           String    @id @default(cuid())
+  name         String
+  dob          DateTime  // Date of birth to auto-calculate current age in application
+  photoUrl     String?   // Profile image stored in Vercel Blob / S3
+  address      String?
+  phone        String    // Parent Phone
+  whatsapp     String?   // Parent WhatsApp
+  careType     CareType  @default(DAY)
+  specialties  String[]  // Multi-select for individual sessions (Speech, Sensory, Motor, Academic, etc.)
+  swimming     Boolean   @default(false)
+  horseback    Boolean   @default(false)
+  baseFee      Decimal   @default(0.0) @db.Decimal(10, 2)
+  swimmingFee  Decimal   @default(0.0) @db.Decimal(10, 2)
+  horsebackFee Decimal   @default(0.0) @db.Decimal(10, 2)
+  totalFee     Decimal   @default(0.0) @db.Decimal(10, 2) // Auto-calculated Total Monthly Due (Base + Activities)
+  diagnosis    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[] // Relation to schedules and booking
+}
+
+model Employee {
+  id          String    @id @default(cuid())
+  name        String
+  phone       String
+  whatsapp    String?
+  gradYear    Int
+  salary      Decimal   @db.Decimal(10, 2)
+  role        Role      @default(SPECIALIST)
+  specialties String[]  // Required if specialist or supervisor (Speech, Sensory, etc.)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sessions    Session[] // Sessions scheduled with this therapist
+}
+
+model Session {
+  id          String      @id @default(cuid())
+  childId     String
+  child       Child       @relation(fields: [childId], references: [id], onDelete: Cascade)
+  employeeId  String
+  employee    Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  specialty   String      // The active specialty/module targeted in this session
+  date        DateTime    // Date of the scheduled session
+  timeSlot    String      // E.g. "09:00 - 10:00", "11:00 - 12:00"
+  type        SessionType @default(INDIVIDUAL) // Morning care, Evening care, Individual Session
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Constraint safety ensured by application code and direct index query checks.
+  // To avoid duplicate bookings, we can enforce a unique constraint for:
+  // 1. Employee + Date + TimeSlot (A specialist cannot be double-booked)
+  // 2. Child + Date + TimeSlot (A child cannot have two overlapping sessions)
+  @@unique([employeeId, date, timeSlot])
+  @@unique([childId, date, timeSlot])
+}
+
+model Expense {
+  id        String          @id @default(cuid())
+  title     String
+  amount    Decimal         @db.Decimal(10, 2)
+  category  ExpenseCategory @default(OTHER)
+  date      DateTime        @default(now())
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
