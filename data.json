@@ -1,0 +1,264 @@
+{
+  "children": [
+    {
+      "id": "child_1",
+      "name": "يوسف عمر",
+      "dob": "2020-03-15",
+      "address": "القاهرة، حي المعادي",
+      "phone": "01012345678",
+      "whatsapp": "01012345678",
+      "careType": "individual",
+      "specialties": [
+        "speech",
+        "sensory"
+      ],
+      "swimming": true,
+      "horseback": false,
+      "baseFee": 2000,
+      "totalFee": 2400
+    },
+    {
+      "id": "child_2",
+      "name": "سارة علي",
+      "dob": "2022-08-10",
+      "address": "الجيزة، حي الدقي",
+      "phone": "01198765432",
+      "whatsapp": "01198765432",
+      "careType": "day",
+      "specialties": [],
+      "swimming": false,
+      "horseback": true,
+      "baseFee": 1500,
+      "totalFee": 2000
+    },
+    {
+      "id": "child_3",
+      "name": "حمزة خالد",
+      "dob": "2018-11-22",
+      "address": "الإسكندرية، حي سموحة",
+      "phone": "01211122233",
+      "whatsapp": "01211122233",
+      "careType": "individual",
+      "specialties": [
+        "skills",
+        "motor"
+      ],
+      "swimming": true,
+      "horseback": true,
+      "baseFee": 2000,
+      "totalFee": 2900
+    },
+    {
+      "id": "child_4",
+      "name": "مريم ابراهيم",
+      "dob": "2021-07-30",
+      "address": "القاهرة، مصر الجديدة",
+      "phone": "01533344455",
+      "whatsapp": "01533344455",
+      "careType": "evening",
+      "specialties": [],
+      "swimming": false,
+      "horseback": false,
+      "baseFee": 1800,
+      "totalFee": 1800
+    }
+  ],
+  "employees": [
+    {
+      "id": "emp_1",
+      "name": "د. ريم أحمد",
+      "phone": "01022233344",
+      "gradYear": 2016,
+      "salary": 8500,
+      "role": "specialist",
+      "specialties": [
+        "speech",
+        "academic"
+      ]
+    },
+    {
+      "id": "emp_2",
+      "name": "د. ليلى حسن",
+      "phone": "01133344455",
+      "gradYear": 2018,
+      "salary": 7500,
+      "role": "specialist",
+      "specialties": [
+        "skills",
+        "sensory"
+      ]
+    },
+    {
+      "id": "emp_3",
+      "name": "د. مازن جلال",
+      "phone": "01244455566",
+      "gradYear": 2015,
+      "salary": 9000,
+      "role": "specialist",
+      "specialties": [
+        "motor",
+        "vocational"
+      ]
+    },
+    {
+      "id": "emp_4",
+      "name": "أ. سارة الشريف",
+      "phone": "01555556667",
+      "gradYear": 2020,
+      "salary": 5000,
+      "role": "secretary",
+      "specialties": []
+    },
+    {
+      "id": "emp_5",
+      "name": "أ. هدى منصور",
+      "phone": "01077788899",
+      "gradYear": 2012,
+      "salary": 11000,
+      "role": "supervisor",
+      "specialties": [
+        "speech",
+        "skills",
+        "sensory",
+        "motor",
+        "academic",
+        "vocational"
+      ]
+    },
+    {
+      "id": "emp_6",
+      "name": "أمينة خالد",
+      "phone": "01088899900",
+      "gradYear": 2022,
+      "salary": 3500,
+      "role": "nanny",
+      "specialties": []
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session_1",
+      "childId": "child_1",
+      "childName": "يوسف عمر",
+      "employeeId": "emp_1",
+      "employeeName": "د. ريم أحمد",
+      "specialty": "speech",
+      "date": "2026-06-27",
+      "timeSlot": "09:00",
+      "type": "individual"
+    },
+    {
+      "id": "session_2",
+      "childId": "child_2",
+      "childName": "سارة علي",
+      "employeeId": "emp_5",
+      "employeeName": "أ. هدى المقرن",
+      "specialty": "skills",
+      "date": "2026-06-27",
+      "timeSlot": "10:30",
+      "type": "morning"
+    },
+    {
+      "id": "session_3",
+      "childId": "child_3",
+      "childName": "حمزة خالد",
+      "employeeId": "emp_3",
+      "employeeName": "د. مازن جلال",
+      "specialty": "motor",
+      "date": "2026-06-27",
+      "timeSlot": "11:45",
+      "type": "individual"
+    },
+    {
+      "id": "session_4",
+      "childId": "child_4",
+      "childName": "مريم ابراهيم",
+      "employeeId": "emp_1",
+      "employeeName": "د. ريم أحمد",
+      "specialty": "speech",
+      "date": "2026-06-27",
+      "timeSlot": "13:00",
+      "type": "evening"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "exp_1",
+      "title": "إيجار المقر الشهري",
+      "amount": 12000,
+      "category": "center_rent",
+      "date": "2026-06-01"
+    },
+    {
+      "id": "exp_2",
+      "title": "فاتورة الكهرباء والمياه والإنترنت",
+      "amount": 2350,
+      "category": "electricity_bill",
+      "date": "2026-06-15"
+    },
+    {
+      "id": "exp_3",
+      "title": "شراء ألعاب حسية وتدريبية وأثاث مبسط",
+      "amount": 4500,
+      "category": "durable_tools",
+      "date": "2026-06-18"
+    },
+    {
+      "id": "exp_4",
+      "title": "أدوات مكتبية وقرطاسية",
+      "amount": 800,
+      "category": "consumables",
+      "date": "2026-06-20"
+    }
+  ],
+  "activities": [
+    {
+      "id": "act_1",
+      "activityName": "swim",
+      "coachId": "emp_3",
+      "coachName": "د. مازن جلال",
+      "childId": "child_1",
+      "childName": "يوسف عمر",
+      "date": "2026-06-27",
+      "timeSlot": "11:45"
+    },
+    {
+      "id": "act_2",
+      "activityName": "horse",
+      "coachId": "emp_5",
+      "coachName": "أ. هدى منصور",
+      "childId": "child_3",
+      "childName": "حمزة خالد",
+      "date": "2026-06-27",
+      "timeSlot": "14:30"
+    }
+  ],
+  "advances": [],
+  "leaves": [],
+  "bonuses": [],
+  "deductions": [],
+  "payrollRuns": [],
+  "auditLogs": [],
+  "payments": [
+    {
+      "id": "pay_init_1",
+      "childId": "child_1",
+      "childName": "يوسف عمر",
+      "amount": 2400,
+      "date": "2026-06-01",
+      "month": "2026-06",
+      "paymentMethod": "cash",
+      "notes": "سداد الاشتراك الشهري بالكامل لشهر يونيو"
+    },
+    {
+      "id": "pay_init_2",
+      "childId": "child_2",
+      "childName": "سارة أحمد",
+      "amount": 2000,
+      "date": "2026-06-02",
+      "month": "2026-06",
+      "paymentMethod": "bank",
+      "notes": "سداد قسط نهار مع نشاط السباحة"
+    }
+  ]
+}

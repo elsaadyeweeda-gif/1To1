@@ -1,3 +1,4 @@
+import '@angular/compiler';
 import {
   AngularNodeAppEngine,
   createNodeRequestHandler,
@@ -489,7 +490,8 @@ const writeDB = (data: DB): void => {
   }
 };
 
-const angularApp = new AngularNodeAppEngine();
+const isStandalone = process.env['RUN_STANDALONE'] === 'true' || process.env['PORT'] === '4000';
+const angularApp = isStandalone ? null : new AngularNodeAppEngine();
 
 // REST API Endpoints
 
@@ -1054,6 +1056,9 @@ app.use(
  * Handle all other requests by rendering the Angular application.
  */
 app.use((req, res, next) => {
+  if (!angularApp) {
+    return next();
+  }
   angularApp
     .handle(req)
     .then((response) =>
@@ -1066,7 +1071,7 @@ app.use((req, res, next) => {
  * Start the server if this module is the main entry point, or it is ran via PM2.
  * The server listens on the port defined by the `PORT` environment variable, or defaults to 4000.
  */
-if (isMainModule(import.meta.url) || process.env['pm_id']) {
+if (isMainModule(import.meta.url) || process.env['pm_id'] || process.env['RUN_STANDALONE'] === 'true' || process.env['PORT'] === '4000') {
   const port = process.env['PORT'] || 4000;
   app.listen(port, (error) => {
     if (error) {

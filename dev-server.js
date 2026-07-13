@@ -5,7 +5,7 @@ console.log('[Dev Server Runner] Starting backend and frontend...');
 // 1. Start the Express backend on port 4000
 const backend = spawn('npx', ['tsx', '--watch', 'src/server.ts'], {
   stdio: 'pipe',
-  env: { ...process.env, PORT: '4000' }
+  env: { ...process.env, PORT: '4000', RUN_STANDALONE: 'true' }
 });
 
 backend.stdout.on('data', (data) => {
