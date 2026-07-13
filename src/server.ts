@@ -491,7 +491,7 @@ const writeDB = (data: DB): void => {
 };
 
 const isStandalone = process.env['RUN_STANDALONE'] === 'true' || process.env['PORT'] === '4000';
-const angularApp = isStandalone ? null : new AngularNodeAppEngine();
+const angularApp = isStandalone ? null : new AngularNodeAppEngine({ trustProxyHeaders: true });
 
 // REST API Endpoints
 
