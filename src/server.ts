@@ -27,6 +27,7 @@ if (originalFetch) {
 }
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import patientsRouter from './routes/patients';
 
 const app = express();
 app.use((req, res, next) => {
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use('/api/sql/patients', patientsRouter);
 
 const dbPath = join(process.cwd(), 'data.json');
 
